@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Båt‑Fartsmåler</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background: #eef;
+    }
+    h1 {
+      margin-bottom: 2rem;
+    }
+    .speed {
+      font-size: 4rem;
+      margin: 0.5rem 0;
+    }
+    .label {
+      font-size: 1.2rem;
+      color: #555;
+    }
+  </style>
+  <script>
+    const KMH_IN_MPS = 3.6;      // 1 m/s = 3.6 km/t
+    const KNOT_IN_KMH = 1.852;   // 1 knop = 1.852 km/t
+
+    let lastPos = null; // lagrer forrige posisjon for å beregne fart selv
+
+    function toRad(deg) {
+      return deg * Math.PI / 180;
+    }
+
+    // Haversine-formelen for avstand mellom to koordinater (i meter)
+    function haversine(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // jordradius i meter
+      const φ1 = toRad(lat1);
+      const φ2 = toRad(lat2);
+      const Δφ = toRad(lat2 - lat1);
+      const Δλ = toRad(lon2 - lon1);
+
+      const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function oppdaterDisplay(kmh, knots) {
+      document.getElementById("kmh").textContent = kmh.toFixed(1);
+      document.getElementById("knots").textContent = knots.toFixed(1);
+    }
+
+    function posisjonMottatt(pos) {
+      const coords = pos.coords;
+      let speedMps = null;
+
+      // 1) Bruk farten direkte fra GPS hvis tilgjengelig (m/s)
+      if (coords.speed !== null && !isNaN(coords.speed)) {
+        speedMps = coords.speed;
+      } else if (lastPos) {
+        // 2) Ellers beregn selv fra avstand/tid
+        const dist = haversine(lastPos.lat, lastPos.lon, coords.latitude, coords.longitude); // meter
+        const dt = (pos.timestamp - lastPos.time) / 1000; // sekunder
+        if (dt > 0) {
+          speedMps = dist / dt;
+        }
+      }
+
+      // lagre nåværende posisjon for neste runde
+      lastPos = { lat: coords.latitude, lon: coords.longitude, time: pos.timestamp };
+
+      if (speedMps !== null) {
+        const kmh = speedMps * KMH_IN_MPS;
+        const knots = kmh / KNOT_IN_KMH;
+        oppdaterDisplay(kmh, knots);
+      }
+    }
+
+    function start() {
+      if (!navigator.geolocation) {
+        alert("Nettleseren støtter ikke Geolocation.");
+        return;
+      }
+
+      navigator.geolocation.watchPosition(
+        posisjonMottatt,
+        (err) => alert("Feil med GPS: " + err.message),
+        {
+          enableHighAccuracy: true, // viktig for mest mulig nøyaktighet
+          maximumAge: 1000,
+          timeout: 10000,
+        }
+      );
+    }
+
+    window.addEventListener("load", start);
+  </script>
+</head>
+<body>
+  <h1>Båt‑Fartsmåler</h1>
+
+  <div>
+    <div class="speed" id="kmh">0.0</div>
+    <div class="label">km/t</div>
+  </div>
+
+  <div>
+    <div class="speed" id="knots">0.0</div>
+    <div class="label">knop</div>
+  </div>
+
+  <p style="margin-top:2rem;color:#555;font-size:0.9rem">
+    GPS‑data hentes fra nettleseren. Krever at siden kjøres over HTTPS (eller
+    <em>localhost</em>).
+  </p>
+</body>
+</html>
